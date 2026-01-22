@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Mobile FPS Sandbox</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<style>
+body{margin:0;overflow:hidden;background:#000;touch-action:none;}
+#reticle{
+  position:fixed;left:50%;top:50%;
+  width:16px;height:16px;margin:-8px;
+  border:2px solid white;border-radius:50%;
+  z-index:10;
+}
+#joystick{
+  position:fixed;left:20px;bottom:20px;
+  width:120px;height:120px;border-radius:50%;
+  background:rgba(255,255,255,0.1);
+  border:2px solid white;
+}
+#stick{
+  position:absolute;left:40px;top:40px;
+  width:40px;height:40px;border-radius:50%;
+  background:rgba(255,255,255,0.5);
+}
+.button{
+  position:fixed;right:20px;
+  width:80px;height:80px;border-radius:50%;
+  background:rgba(255,255,255,0.15);
+  border:2px solid white;
+  color:white;text-align:center;
+  line-height:80px;
+  user-select:none;
+}
+#grabBtn{bottom:20px;font-size:12px;}
+#camBtn{bottom:120px;font-size:13px;}
+</style>
+</head>
+<body>
+
+<div id="reticle"></div>
+<div id="joystick"><div id="stick"></div></div>
+<div id="camBtn" class="button">FPS</div>
+<div id="grabBtn" class="button">引き寄せる</div>
+
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
+import * as CANNON from "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js";
+
+/* ===== SCENE ===== */
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x202030);
+
+const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,200);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+addEventListener("resize",()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+
+/* ===== LIGHT ===== */
+scene.add(new THREE.AmbientLight(0xffffff,0.5));
+const sun=new THREE.DirectionalLight(0xffffff,1);
+sun.position.set(10,20,10);
+scene.add(sun);
+
+/* ===== PHYSICS ===== */
+const world=new CANNON.World({gravity:new CANNON.Vec3(0,-9.8,0)});
+
+/* ===== FLOOR ===== */
+const floorMesh=new THREE.Mesh(
+  new THREE.PlaneGeometry(80,80),
+  new THREE.MeshStandardMaterial({color:0x444444})
+);
+floorMesh.rotation.x=-Math.PI/2;
+scene.add(floorMesh);
+
+const floorBody=new CANNON.Body({mass:0,shape:new CANNON.Plane()});
+floorBody.quaternion.setFromEuler(-Math.PI/2,0,0);
+world.addBody(floorBody);
+
+/* ===== PLAYER BODY ===== */
+const playerBody=new CANNON.Body({
+  mass:5,
+  shape:new CANNON.Sphere(0.45),
+  position:new CANNON.Vec3(0,2,5),
+  fixedRotation:true
+});
+world.addBody(playerBody);
+
+/* ===== HUMAN PLAYER MODEL ===== */
+const player=new THREE.Group();
+
+/* materials */
+const skinMat=new THREE.MeshStandardMaterial({color:0xf1c27d,roughness:0.4});
+const shirtMat=new THREE.MeshStandardMaterial({color:0x3366ff});
+const pantsMat=new THREE.MeshStandardMaterial({color:0x222222});
+const eyeWhite=new THREE.MeshStandardMaterial({color:0xffffff});
+const eyeBlack=new THREE.MeshStandardMaterial({color:0x000000});
+const mouthMat=new THREE.MeshStandardMaterial({color:0xaa5555});
+
+/* head */
+const head=new THREE.Mesh(
+  new THREE.SphereGeometry(0.35,96,96),skinMat);
+head.position.y=1.75;
+player.add(head);
+
+/* eyes */
+for(let s of [-1,1]){
+  const eyeW=new THREE.Mesh(
+    new THREE.SphereGeometry(0.07,32,32),eyeWhite);
+  eyeW.position.set(0.12*s,1.78,0.32);
+  player.add(eyeW);
+
+  const eyeB=new THREE.Mesh(
+    new THREE.SphereGeometry(0.035,24,24),eyeBlack);
+  eyeB.position.set(0.12*s,1.78,0.38);
+  player.add(eyeB);
+}
+
+/* mouth */
+const mouth=new THREE.Mesh(
+  new THREE.CapsuleGeometry(0.06,0.12,8,16),mouthMat);
+mouth.rotation.x=Math.PI/2;
+mouth.position.set(0,1.62,0.33);
+player.add(mouth);
+
+/* torso */
+const torso=new THREE.Mesh(
+  new THREE.CapsuleGeometry(0.38,1.2,24,48),shirtMat);
+torso.position.y=1.0;
+player.add(torso);
+
+/* arms */
+for(let s of [-1,1]){
+  const arm=new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.13,0.9,16,32),skinMat);
+  arm.position.set(0.58*s,1.25,0);
+  arm.rotation.z=s*0.25;
+  player.add(arm);
+}
+
+/* legs */
+for(let s of [-1,1]){
+  const leg=new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.17,1.0,20,32),pantsMat);
+  leg.position.set(0.22*s,0.45,0);
+  player.add(leg);
+}
+
+scene.add(player);
+
+/* ===== OBJECTS ===== */
+const objects=[];
+for(let i=0;i<8;i++){
+  const mesh=new THREE.Mesh(
+    new THREE.BoxGeometry(1,1,1),
+    new THREE.MeshStandardMaterial({color:0x66ccff})
+  );
+  scene.add(mesh);
+  const body=new CANNON.Body({
+    mass:2,
+    shape:new CANNON.Box(new CANNON.Vec3(0.5,0.5,0.5)),
+    position:new CANNON.Vec3((Math.random()-0.5)*10,3+i,(Math.random()-0.5)*10)
+  });
+  world.addBody(body);
+  objects.push({mesh,body});
+}
+
+/* ===== INPUT ===== */
+let yaw=0,pitch=0;
+let joyX=0,joyY=0;
+let freeCamera=false;
+let lookId=null,joyId=null;
+
+/* look */
+addEventListener("pointerdown",e=>{
+  if(e.target.id==="joystick"||e.target.id==="stick") return;
+  lookId=e.pointerId;
+});
+addEventListener("pointermove",e=>{
+  if(e.pointerId!==lookId) return;
+  yaw-=e.movementX*0.005;
+  pitch-=e.movementY*0.005;
+  pitch=Math.max(-1.4,Math.min(1.4,pitch));
+});
+addEventListener("pointerup",e=>{
+  if(e.pointerId===lookId) lookId=null;
+});
+
+/* joystick */
+const joy=document.getElementById("joystick");
+const stick=document.getElementById("stick");
+
+joy.addEventListener("pointerdown",e=>joyId=e.pointerId);
+joy.addEventListener("pointermove",e=>{
+  if(e.pointerId!==joyId) return;
+  const r=joy.getBoundingClientRect();
+  joyX=Math.max(-1,Math.min(1,(e.clientX-(r.left+60))/40));
+  joyY=Math.max(-1,Math.min(1,(e.clientY-(r.top+60))/-40));
+  stick.style.left=40+joyX*40+"px";
+  stick.style.top =40-joyY*40+"px";
+});
+joy.addEventListener("pointerup",resetJoy);
+function resetJoy(){
+  joyId=null;joyX=joyY=0;
+  stick.style.left="40px";stick.style.top="40px";
+}
+
+/* ===== 引き寄せる ===== */
+const ray=new THREE.Raycaster();
+let grabbed=null;
+
+grabBtn.onclick=()=>{
+  if(grabbed){ grabbed=null; return; }
+  ray.setFromCamera({x:0,y:0},camera);
+  const hit=ray.intersectObjects(objects.map(o=>o.mesh));
+  if(hit.length) grabbed=objects.find(o=>o.mesh===hit[0].object);
+};
+
+/* camera toggle */
+camBtn.onclick=()=>{
+  freeCamera=!freeCamera;
+  camBtn.textContent=freeCamera?"FREE":"FPS";
+};
+
+/* ===== LOOP ===== */
+function animate(){
+  requestAnimationFrame(animate);
+  world.step(1/60);
+
+  const speed=5;
+  const forward=new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw));
+  const right=new THREE.Vector3(Math.cos(yaw),0,-Math.sin(yaw));
+
+  if(freeCamera){
+    camera.position.addScaledVector(forward,joyY*0.25);
+    camera.position.addScaledVector(right,joyX*0.25);
+    player.visible=true;
+  }else{
+    playerBody.velocity.x=forward.x*(joyY*speed)+right.x*(joyX*speed);
+    playerBody.velocity.z=forward.z*(joyY*speed)+right.z*(joyX*speed);
+    camera.position.set(
+      playerBody.position.x,
+      playerBody.position.y+0.7,
+      playerBody.position.z
+    );
+    player.visible=false;
+  }
+
+  player.position.set(
+    playerBody.position.x,
+    playerBody.position.y-0.5,
+    playerBody.position.z
+  );
+
+  if(grabbed){
+    const target=playerBody.position.vadd(
+      new CANNON.Vec3(Math.sin(yaw)*2,1,Math.cos(yaw)*2)
+    );
+    const force=target.vsub(grabbed.body.position);
+    force.scale(20,force);
+    grabbed.body.applyForce(force);
+  }
+
+  objects.forEach(o=>{
+    o.mesh.position.copy(o.body.position);
+    o.mesh.quaternion.copy(o.body.quaternion);
+  });
+
+  camera.rotation.set(pitch,yaw,0,"YXZ");
+  renderer.render(scene,camera);
+}
+animate();
+</script>
+</body>
+</html>
